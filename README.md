@@ -1,7 +1,5 @@
 # Test-1-Modbus
 
-# Test-1-Modbus
-
 ## 簡介
 
 本專案為一個模擬 Modbus 通訊的測試程式，包含一個伺服器端程式 (server.py) 和一個客戶端程式 (client.py)。
