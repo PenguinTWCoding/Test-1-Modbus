@@ -1,29 +1,68 @@
+import os
 import time
-import socket
-import random
+from datetime import datetime
+from pymodbus.client.sync import ModbusTcpClient
+from pymodbus.transaction import ModbusSocketFramer
 
-def simulate_detection_machine(client_socket, station_address):
-    # 模擬檢測站狀態的變化
-    detection_state = random.randint(0, 2)
-
-    # 將模擬的狀態和檢測站位址發送到伺服器
-    data = station_address.to_bytes(2, 'big') + detection_state.to_bytes(1, 'big')
-    client_socket.send(data)
-
-    time.sleep(0.05)
+def count_ok_ng_products(statistics_station, address_station, detection_state):
+    # 更新檢測站的統計信息
+    if detection_state == 1:  # 良品
+        address_station['ok_count'] += 1
+        statistics_station['ok_count'] += 1
+    elif detection_state == 2:  # 不良品
+        address_station['ng_count'] += 1
+        statistics_station['ng_count'] += 1
 
 if __name__ == "__main__":
-    HOST = '127.0.0.1'
-    PORT = 12345
+    HOST = 'localhost'
+    PORT = 502
 
-    # 為每個檢測站設定 Modbus 位址
-    STATION_ADDRESSES = [40001, 40003, 40005, 40007, 40009, 40011]
+    address_station_mapping = {
+        'statistics': {'description': "總數量統計", 'ok_count': 0, 'ng_count': 0},
+        40001: {'description': "檢測站 1", 'ok_count': 0, 'ng_count': 0},
+        40003: {'description': "檢測站 2", 'ok_count': 0, 'ng_count': 0},
+        40005: {'description': "檢測站 3", 'ok_count': 0, 'ng_count': 0},
+        40007: {'description': "檢測站 4", 'ok_count': 0, 'ng_count': 0},
+        40009: {'description': "檢測站 5", 'ok_count': 0, 'ng_count': 0},
+        40011: {'description': "檢測站 6", 'ok_count': 0, 'ng_count': 0}
+    }
 
-    # 創建6個 client 並模擬各自的檢測機
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_sockets:
-        client_sockets.connect((HOST, PORT))
+    last_request_time = time.time()  # 初始化上次詢問時間
 
-        while True:
-            for station_address in STATION_ADDRESSES:
-                simulate_detection_machine(client_sockets, station_address)
-            time.sleep(1)
+    while True:
+        try:
+            # 計算間隔時間並延遲
+            current_time = time.time()
+            if current_time - last_request_time < 1:  # 確保每次詢問之間至少相隔1秒
+                time.sleep(1 - (current_time - last_request_time))
+            last_request_time = time.time()  # 更新上次詢問時間
+
+            # 建立連線
+            with ModbusTcpClient(host=HOST, port=PORT, framer=ModbusSocketFramer) as client:
+                # 使用 read_holding_registers 從地址 40001 開始讀取數值
+                result = client.read_holding_registers(address=0, count=11, unit=1)
+
+                if result.isError():
+                    print("讀取錯誤")
+                else:
+                    data = result.registers[0:11]
+
+                    # 清除 cmd 之前的輸出
+                    if os.name == 'nt':
+                        os.system('cls')
+                    else:
+                        os.system('clear')
+
+                    for addr, detection_state in enumerate(data):
+                        statistics_station = address_station_mapping['statistics']
+                        address_station = address_station_mapping.get(40001 + addr)
+                        if address_station:
+                            count_ok_ng_products(statistics_station, address_station, detection_state)
+                            print(f"檢測站 {address_station['description']}: 當前狀態: {detection_state}, 良品數量: {address_station['ok_count']}, 不良品數量: {address_station['ng_count']}")
+                    print(f"總良品數量: {address_station_mapping['statistics']['ok_count']}, 總不良品數量: {address_station_mapping['statistics']['ng_count']}")
+                    print(f"最後刷新時間: {datetime.now()}")
+            # time.sleep(1)  # 每1秒執行一次詢問
+
+        except Exception as e:
+            print(f"{datetime.now()} - 發生錯誤: {e}")
+            time.sleep(1)  # 等待1秒後重新嘗試連線
